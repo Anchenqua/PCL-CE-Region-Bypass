@@ -1,0 +1,22 @@
+# 构建产物（用 build.ps1 生成，不入库；发布请走 Release）
+bin/
+obj/
+publish/
+
+# IDE / 编辑器
+.vs/
+.vscode/
+*.user
+*.suo
+*.DotSettings.user
+
+# 临时与本地实验目录
+_probe/
+_ref/
+_real/
+
+# 杂项
+*.log
+*.tmp
+Thumbs.db
+.DS_Store

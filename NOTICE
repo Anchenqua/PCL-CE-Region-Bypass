@@ -1,0 +1,23 @@
+PCL-CE 地区限制解除器 (PCLRegionBypass)
+Copyright 2026 The PCLRegionBypass Contributors
+
+本仓库包含由 PCL-Community/PCL-CE 衍生的代码，特此署名：
+
+  * 文件：src/PolicyPort.cs
+    来源：PCL-CE 的 PCL.Core/App/Region/RegionPolicy.cs
+          https://github.com/PCL-Community/PCL-CE/blob/dev/PCL.Core/App/Region/RegionPolicy.cs
+    版权：PCL-CE Contributors
+    许可：Apache License, Version 2.0（见本仓库 LICENSE）
+
+  修改说明：
+    该文件是上述 RegionPolicy 判定逻辑的移植版本，仅用于本工具的 --inspect 诊断与自动化测试，
+    不参与实际的补丁流程。为兼容 Windows 自带的 .NET Framework 4.x 编译器（C# 5），
+    原实现中的 record / 集合表达式 / 文件级命名空间 / LibraryImport 等语法被改写为等价写法，
+    不安全指针缓冲区改为 Marshal.AllocHGlobal；判定分支、顺序与原因字符串保持一致。
+
+  * 本项目未包含 PCL-CE 的其它源码、资源或二进制文件。
+
+代码生成说明：
+本仓库的代码由 AI 助手生成 —— DeepSeek Harness，模型 deepseek-flash。
+需求、取舍与验收由仓库所有者提出；所有功能均在真实 Windows 环境上编译并测试
+（见 README 第 5、6 节的测试与验证记录）。AI 生成的代码可能存在错误，使用者应自行审查。
