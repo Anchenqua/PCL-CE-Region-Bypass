@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -406,14 +406,24 @@ namespace PclRegionBypass
 
         private void BrowseClick(object sender, EventArgs e)
         {
-            using (var dialog = new OpenFileDialog())
+            try
             {
-                dialog.Title = "选择 PCL-CE 主程序";
-                dialog.Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*";
-                string directory = Path.GetDirectoryName(_pathBox.Text);
-                if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
-                    dialog.InitialDirectory = directory;
-                if (dialog.ShowDialog(this) == DialogResult.OK) _pathBox.Text = dialog.FileName;
+                using (var dialog = new OpenFileDialog())
+                {
+                    dialog.Title = "选择 PCL-CE 主程序";
+                    dialog.Filter = "可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*";
+
+                    // 路径框可能是空的，也可能有非法字符：必须容错，否则 Path.GetDirectoryName 会抛异常崩掉窗口
+                    string directory = PathUtil.ExistingDirectoryOf(_pathBox.Text);
+                    if (directory != null) dialog.InitialDirectory = directory;
+
+                    if (dialog.ShowDialog(this) == DialogResult.OK) _pathBox.Text = dialog.FileName;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "打开文件选择框失败：" + ex.Message, "错误",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 

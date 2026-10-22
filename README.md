@@ -1,4 +1,4 @@
-﻿# PCL-CE 地区限制解除器
+# PCL-CE 地区限制解除器
 
 在 **进程内存** 里把 PCL-CE 用来判断「你在哪个国家/地区」的几个 Windows 查询函数改写掉，让它认为你在美国，
 从而恢复 Minecraft 下载、补全、安装与整合包功能。
@@ -181,12 +181,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 ```
 
-四个测试靶：
+五个测试靶：
 
 - **A** 直接跑「判定逻辑复刻版」（`tests/PolicyTarget.cs`，移植自真实 `RegionPolicy.cs`）→ 应当 `RESTRICTED=YES`
 - **B** 经补丁器启动 → `RESTRICTED=NO`，`GeoName=US`、`LocaleName=en-US`
 - **C** 两阶段模式（先出窗口、再判定）→ `RESTRICTED=NO`，同时 `CurrentCulture=zh-CN` 未被污染
 - **D** 注册表钩子（`tests/RegHookTarget.cs`）→ `DeviceRegion` 被屏蔽，其它值名（含 11 个字符的近似名）照常透传
+- **E** 路径容错（`tests/PathUtilTest.cs`）→ 空串、纯空白、非法字符、不存在的目录都不能抛异常
 
 实际输出：
 
@@ -213,6 +214,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
   PASS  hook hides DeviceRegion (RegGetValue)
   PASS  other values pass through
   PASS  similar name passes through
+
+[E] path handling (empty / invalid input must not throw)
+  PASS  path helper handles empty and invalid input (exit 0)
+  PASS  path helper reports all passed
 
 ALL TESTS PASSED
 ```
@@ -261,6 +266,7 @@ src/Launcher.cs        启动/附加/监视、等窗口、注册表钩子重试
 src/PolicyPort.cs      真实判定逻辑的移植（仅用于诊断与测试）
 src/Settings.cs        配置持久化（路径、关闭行为、静默启动）
 src/AutoStart.cs       开机启动（HKCU Run 项，含路径自愈）
+src/PathUtil.cs        路径容错（空串/非法字符不抛异常）
 src/AppIcon.cs         运行时画托盘/窗口图标
 src/CloseChoiceDialog.cs  关闭时「最小化到托盘 / 直接退出」询问
 src/AppInfo.cs         名称与版本
@@ -303,9 +309,11 @@ README.md
 DISCLAIMER.md         免责声明（中文 + English summary）
 LICENSE               Apache License 2.0
 NOTICE                第三方署名与 AI 生成说明
+assets/app.ico        exe 与托盘图标
+tools/MakeIcon.cs     图标生成器（仅在改图标时需要跑）
 docs/                 README 用截图
 src/                  工具源码（见第 7 节）
-tests/                测试靶源码（PolicyTarget / RegHookTarget）
+tests/                测试靶源码（PolicyTarget / RegHookTarget / PathUtilTest）
 ```
 
 构建产物 `bin/` 不入库；发布二进制请用 GitHub Releases。
@@ -347,3 +355,23 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 `RegionPolicy.cs` 判定逻辑的移植版本，仅用于诊断与测试；衍生关系、修改内容与第三方署名见 [NOTICE](NOTICE)。
 本仓库不包含 PCL-CE 的其它源码、资源或二进制文件。
 
+## 13. 更新日志
+
+### v1.1.1
+
+- **修复**：路径框为空时点击「浏览…」抛出 `ArgumentException`（`Path.GetDirectoryName("")`），
+  窗口直接崩到「实时(JIT)调试」对话框。现在统一走 `PathUtil.ExistingDirectoryOf`，空串/空白/引号/
+  非法字符/超长路径一律容错。
+- **修复**：任何未处理的界面异常不再弹 JIT 调试框，改为友好提示，并把完整堆栈写入
+  `%TEMP%\PCLRegionBypass-crash.log`。
+- 补充程序集信息（文件属性里的版本/产品名/版权）与 exe 图标（`assets/app.ico`）。
+- 新增路径容错回归测试（测试 E）。
+
+### v1.1.0
+
+- 新增托盘常驻、开机启动、静默启动、关闭时询问「最小化到托盘 / 直接退出」（可记住）。
+- 新增单实例：已在托盘时再次启动会唤出已有窗口。
+
+### v1.0.0
+
+- 首个版本：进程内拦截 6 个地区/语言查询函数，解除下载/安装/补全/整合包限制。

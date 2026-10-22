@@ -14,9 +14,12 @@ $out = Join-Path $outDir 'PCLRegionBypass.exe'
 
 $argsTool = @(
     '/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/debug-',
-    '/r:System.dll', '/r:System.Core.dll', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll',
-    ('/out:' + $out)
-) + $sources
+    '/r:System.dll', '/r:System.Core.dll', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll'
+)
+$iconPath = Join-Path $root 'assets\app.ico'
+if (Test-Path $iconPath) { $argsTool += ('/win32icon:' + $iconPath) }
+$argsTool += ('/out:' + $out)
+$argsTool += $sources
 
 & $csc $argsTool
 if ($LASTEXITCODE -ne 0) { throw "tool build failed (exit $LASTEXITCODE)" }
@@ -50,3 +53,17 @@ $argsReg = @(
 & $csc $argsReg
 if ($LASTEXITCODE -ne 0) { throw "registry test target build failed (exit $LASTEXITCODE)" }
 Write-Host ("built: " + $regOut)
+
+# Path handling regression test (empty / invalid path inputs must never throw).
+$pathOut = Join-Path $outDir 'PathTest.exe'
+$argsPath = @(
+    '/nologo', '/target:exe', '/platform:x64', '/optimize+', '/debug-',
+    '/r:System.dll', '/r:System.Core.dll',
+    ('/out:' + $pathOut),
+    (Join-Path $root 'tests\PathUtilTest.cs'),
+    (Join-Path $root 'src\PathUtil.cs')
+)
+
+& $csc $argsPath
+if ($LASTEXITCODE -ne 0) { throw "path test build failed (exit $LASTEXITCODE)" }
+Write-Host ("built: " + $pathOut)

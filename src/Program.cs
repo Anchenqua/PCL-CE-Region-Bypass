@@ -114,6 +114,17 @@ namespace PclRegionBypass
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
+                // 兜底：任何没被捕获的界面异常都转成友好提示，而不是弹「实时(JIT)调试」对话框
+                Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+                Application.ThreadException += delegate(object sender, ThreadExceptionEventArgs e)
+                {
+                    ReportUnexpected(e.Exception);
+                };
+                AppDomain.CurrentDomain.UnhandledException += delegate(object sender, UnhandledExceptionEventArgs e)
+                {
+                    ReportUnexpected(e.ExceptionObject as Exception);
+                };
+
                 Settings.Load();
                 bool startHidden = options.Silent || Settings.SilentStart;
 
@@ -130,6 +141,35 @@ namespace PclRegionBypass
                 }
 
                 return 0;
+            }
+        }
+
+        /// <summary>未处理异常的统一出口：写日志 + 友好提示，避免出现「实时(JIT)调试」对话框。</summary>
+        private static void ReportUnexpected(Exception exception)
+        {
+            string message = exception == null ? "未知错误" : exception.ToString();
+            string logPath = Path.Combine(Path.GetTempPath(), "PCLRegionBypass-crash.log");
+            try
+            {
+                File.AppendAllText(logPath, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + message + "\r\n\r\n",
+                    Encoding.UTF8);
+            }
+            catch
+            {
+                logPath = null;
+            }
+
+            try
+            {
+                MessageBox.Show(
+                    "程序遇到了一个未处理的错误：\r\n\r\n" +
+                    (exception == null ? "未知错误" : exception.Message) +
+                    (logPath == null ? string.Empty : "\r\n\r\n详细信息已写入：" + logPath),
+                    AppInfo.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            catch
+            {
+                // 连提示框都弹不出来时就算了
             }
         }
 

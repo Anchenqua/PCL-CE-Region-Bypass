@@ -56,6 +56,11 @@ Assert-Match 'hook hides DeviceRegion (RegGetValue)' 'DEVICE_REGION_GETVALUE=\s*
 Assert-Match 'other values pass through' 'OTHER_VALUE\s+=\s+0' $outD
 Assert-Match 'similar name passes through' 'PREFIX_DEVICEREGIO\s+=\s+0' $outD
 
+Write-Host "`n[E] path handling (empty / invalid input must not throw)" -ForegroundColor Cyan
+$pathOut = (& (Join-Path $root 'bin\PathTest.exe') 2>&1 | Out-String)
+Assert-Equal 'path helper handles empty and invalid input' 0 $LASTEXITCODE
+Assert-Match 'path helper reports all passed' 'PATHUTIL: ALL PASSED' $pathOut
+
 Write-Host ""
 if ($script:failures -eq 0) {
     Write-Host "ALL TESTS PASSED" -ForegroundColor Green
