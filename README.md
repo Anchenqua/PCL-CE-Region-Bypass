@@ -185,9 +185,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 ```
 
-五个测试靶：
+五个测试靶（全部在无窗口干扰下运行，测试靶的窗口用 `WS_EX_TOOLWINDOW` + 屏幕外坐标，桌面上看不到）：
 
-- **A** 直接跑「判定逻辑复刻版」（`tests/PolicyTarget.cs`，移植自真实 `RegionPolicy.cs`）→ 应当 `RESTRICTED=YES`
+- **A** 判定逻辑
+  - A1「确定性单元测试」（`tests/PolicyLogicTest.cs`）：直接喂固定的地区信号给移植版 `Evaluate`，
+    覆盖 geo=CN / DeviceRegion=45 / 中国时区+zh-CN / 无信号 等分支，与本机区域无关，CI runner 上也一样
+  - A2 基线对照：用本机真实信号跑一遍判定靶，期望值与 `--inspect` 的结论一致
+    （中文机器上应为「受限」，境外 CI runner 上本来就不受限，因此不写死结果）
 - **B** 经补丁器启动 → `RESTRICTED=NO`，`GeoName=US`、`LocaleName=en-US`
 - **C** 两阶段模式（先出窗口、再判定）→ `RESTRICTED=NO`，同时 `CurrentCulture=zh-CN` 未被污染
 - **D** 注册表钩子（`tests/RegHookTarget.cs`）→ `DeviceRegion` 被屏蔽，其它值名（含 11 个字符的近似名）照常透传
@@ -196,8 +200,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 实际输出：
 
 ```
-[A] baseline: policy target without patches (expect RESTRICTED)
-  PASS  baseline is restricted (exit 1)
+[A] policy logic (deterministic) + baseline on this machine
+  PASS  policy logic unit tests (exit 0)
+  PASS  policy logic reports all passed
+  PASS  baseline matches machine signal (expected 1) (exit 1)
 
 [B] patched via launcher, immediate hooks
   PASS  patched is unrestricted (exit 0)
@@ -224,6 +230,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
   PASS  path helper reports all passed
 
 ALL TESTS PASSED
+```
+
+> 脚本用 UTF-8 BOM 保存：Windows PowerShell 5.1 在没有 BOM 时会按 ANSI 读取 `.ps1`，
+> 中文注释会被错误解码并吃掉下一行语句。
 ```
 
 ## 6. 在真实 PCL-CE 2.15.1 上的验证

@@ -12,6 +12,15 @@ namespace PathUtilTest
     {
         private static int Main()
         {
+            try
+            {
+                Console.OutputEncoding = new System.Text.UTF8Encoding(false);
+            }
+            catch
+            {
+                // 忽略
+            }
+
             int failures = 0;
 
             Expect(ref failures, "空串", null, PathUtil.ExistingDirectoryOf(""));

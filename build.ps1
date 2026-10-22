@@ -1,4 +1,4 @@
-# Build with the .NET Framework compiler that ships with Windows (no SDK required).
+﻿# Build with the .NET Framework compiler that ships with Windows (no SDK required).
 # Kept ASCII-only on purpose: Windows PowerShell 5.1 reads .ps1 as ANSI without a BOM.
 $ErrorActionPreference = 'Stop'
 
@@ -67,3 +67,17 @@ $argsPath = @(
 & $csc $argsPath
 if ($LASTEXITCODE -ne 0) { throw "path test build failed (exit $LASTEXITCODE)" }
 Write-Host ("built: " + $pathOut)
+
+# Deterministic policy unit test (feeds fixed RegionSignals, no OS signals involved).
+$policyOut = Join-Path $outDir 'PolicyTest.exe'
+$argsPolicy = @(
+    '/nologo', '/target:exe', '/platform:x64', '/optimize+', '/debug-',
+    '/r:System.dll', '/r:System.Core.dll',
+    ('/out:' + $policyOut),
+    (Join-Path $root 'tests\PolicyLogicTest.cs'),
+    (Join-Path $root 'src\PolicyPort.cs')
+)
+
+& $csc $argsPolicy
+if ($LASTEXITCODE -ne 0) { throw "policy logic test build failed (exit $LASTEXITCODE)" }
+Write-Host ("built: " + $policyOut)

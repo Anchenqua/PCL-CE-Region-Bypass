@@ -42,11 +42,14 @@ namespace PolicyTarget
                 Thread.CurrentThread.CurrentUICulture = chinese;
 
                 // 模拟启动器：先起一个窗口（此时区域性已经定型），再在窗口存在期间做判定。
+                // 窗口用 WS_EX_TOOLWINDOW + 屏幕外坐标，桌面上完全看不到、也不占任务栏，
+                // 但对 Win32 而言仍是「可见的无主顶层窗口」，补丁器的窗口检测照常成立。
                 int exitCode = 1;
-                var form = new Form
+                var form = new SilentForm
                 {
                     Text = "PolicyTarget",
-                    ClientSize = new System.Drawing.Size(360, 120)
+                    ClientSize = new System.Drawing.Size(360, 120),
+                    ShowInTaskbar = false
                 };
                 form.Shown += delegate
                 {
@@ -88,6 +91,22 @@ namespace PolicyTarget
             Console.WriteLine("Reason               = " + assessment.Reason);
             Console.WriteLine("RESTRICTED           = " + (assessment.IsRestricted ? "YES" : "NO"));
             return assessment.IsRestricted ? 1 : 0;
+        }
+
+        /// <summary>不打扰用户的窗口：工具窗口样式 + 屏幕外坐标。</summary>
+        private sealed class SilentForm : Form
+        {
+            protected override CreateParams CreateParams
+            {
+                get
+                {
+                    CreateParams parameters = base.CreateParams;
+                    parameters.ExStyle |= 0x00000080; // WS_EX_TOOLWINDOW
+                    parameters.X = -4000;
+                    parameters.Y = -4000;
+                    return parameters;
+                }
+            }
         }
 
         private static string Show(string value)
