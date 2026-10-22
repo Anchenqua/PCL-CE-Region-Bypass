@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的标签（例如 v1.1.1，需与 src/AppInfo.cs 中的版本一致）'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 发布 (Windows x64)
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 解析并校验版本
+        id: version
+        shell: pwsh
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          $tag = if ($env:REF_TYPE -eq 'tag') { $env:REF_NAME } else { $env:INPUT_TAG }
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw '无法确定标签名' }
+
+          $version = $tag.TrimStart('v')
+          $source = Get-Content 'src/AppInfo.cs' -Raw
+          $pattern = 'Version\s*=\s*"' + [regex]::Escape($version) + '"'
+          if ($source -notmatch $pattern) {
+            throw "标签 $tag 与 src/AppInfo.cs 中的版本号不一致（期望 $version）"
+          }
+
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "版本校验通过：$tag"
+
+      - name: 构建
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./build.ps1
+
+      - name: 自动化测试
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./test.ps1
+
+      - name: 打包
+        shell: pwsh
+        run: |
+          $tag = '${{ steps.version.outputs.tag }}'
+          $staging = "dist/PCLRegionBypass-$tag-x64"
+
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item 'bin/PCLRegionBypass.exe' $staging
+          Copy-Item 'README.md', 'DISCLAIMER.md', 'LICENSE', 'NOTICE' $staging
+
+          $zip = "dist/PCLRegionBypass-$tag-x64.zip"
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip -Force
+
+          Copy-Item 'bin/PCLRegionBypass.exe' 'dist/PCLRegionBypass.exe'
+
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          "$hash  PCLRegionBypass-$tag-x64.zip" |
+            Out-File -FilePath 'dist/SHA256SUMS.txt' -Encoding ascii
+
+          Get-ChildItem 'dist' -Recurse -File |
+            Select-Object FullName, Length |
+            Format-Table -AutoSize
+
+          $summary = @(
+            '### 发布包',
+            '',
+            ('- `PCLRegionBypass-{0}-x64.zip`（SHA256 `{1}`）' -f $tag, $hash),
+            '- `PCLRegionBypass.exe`（单文件）',
+            '- `SHA256SUMS.txt`'
+          )
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: PCL-CE 地区限制解除器 ${{ steps.version.outputs.tag }}
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.tag, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/PCLRegionBypass-*.zip
+            dist/PCLRegionBypass.exe
+            dist/SHA256SUMS.txt
+          body: |
+            ## 下载
+
+            | 文件 | 说明 |
+            | --- | --- |
+            | `PCLRegionBypass-${{ steps.version.outputs.tag }}-x64.zip` | 解压即用，含 README / 免责声明 / 许可证 |
+            | `PCLRegionBypass.exe` | 单文件，仅依赖 .NET Framework 4.x（Win10/11 自带） |
+            | `SHA256SUMS.txt` | 校验值 |
+
+            ## 使用
+
+            1. 双击 `PCLRegionBypass.exe`
+            2. 选择 PCL-CE 的主程序（`PCL2_CE_Release_x64.exe` 或改名后的 `PCL.exe`）
+            3. 点「启动并解除限制」；若启动器已在运行，点「附加到运行中」即可
+
+            关闭窗口默认会询问「最小化到托盘 / 直接退出」。托盘菜单里可开关开机启动与静默启动。
+
+            ## 环境要求
+
+            - Windows 10/11 **x64**（暂不支持 ARM64）
+            - .NET Framework 4.8（系统自带，无需额外安装）
+
+            > **免责声明**：本项目为非官方技术实验，与 PCL-CE / Mojang / Microsoft / 网易均无关联。
+            > 它解除的是**地区可用性判断**而非授权，Minecraft Java 版仍需自行合法购买；
+            > 在受限制地区绕过该限制可能违反服务条款或当地法律，**后果自负**。
+            > 完整条款见仓库内 [DISCLAIMER.md](https://github.com/${{ github.repository }}/blob/main/DISCLAIMER.md)。

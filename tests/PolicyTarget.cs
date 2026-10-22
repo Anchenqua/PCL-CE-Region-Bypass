@@ -32,6 +32,15 @@ namespace PolicyTarget
 
             if (formMs > 0)
             {
+                // 模拟中文用户：启动阶段就把进程区域性定为 zh-CN（等价于中文 Windows 上 .NET 的初始状态）。
+                // 补丁器随后才挂上「返回 en-US」的钩子，用来验证界面语言不会被带成英文。
+                // 这样测试在 en-US 的 CI runner 上也有意义，不依赖机器本身的区域设置。
+                CultureInfo chinese = CultureInfo.GetCultureInfo("zh-CN");
+                CultureInfo.DefaultThreadCurrentCulture = chinese;
+                CultureInfo.DefaultThreadCurrentUICulture = chinese;
+                Thread.CurrentThread.CurrentCulture = chinese;
+                Thread.CurrentThread.CurrentUICulture = chinese;
+
                 // 模拟启动器：先起一个窗口（此时区域性已经定型），再在窗口存在期间做判定。
                 int exitCode = 1;
                 var form = new Form

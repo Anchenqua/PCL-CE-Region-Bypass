@@ -1,5 +1,9 @@
 # PCL-CE 地区限制解除器
 
+[![CI](https://github.com/Anchenqua/PCL-CE-Region-Bypass/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Anchenqua/PCL-CE-Region-Bypass/actions/workflows/ci.yml)
+[![Release](https://github.com/Anchenqua/PCL-CE-Region-Bypass/actions/workflows/release.yml/badge.svg)](https://github.com/Anchenqua/PCL-CE-Region-Bypass/actions/workflows/release.yml)
+
+
 在 **进程内存** 里把 PCL-CE 用来判断「你在哪个国家/地区」的几个 Windows 查询函数改写掉，让它认为你在美国，
 从而恢复 Minecraft 下载、补全、安装与整合包功能。
 
@@ -357,6 +361,12 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 
 ## 13. 更新日志
 
+### 未发布（main）
+
+- 新增 GitHub Actions：`ci.yml`（构建 + 全量测试 + artifact）与 `release.yml`（标签校验 + 打包 + 自动发版）
+- 测试靶显式模拟中文用户进程，使「界面语言不会被带成英文」这条断言在 en-US 的 CI runner 上同样有效
+- `.gitignore` 增加 `dist/`（发布工作流的临时产物）
+
 ### v1.1.1
 
 - **修复**：路径框为空时点击「浏览…」抛出 `ArgumentException`（`Path.GetDirectoryName("")`），
@@ -375,3 +385,38 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 ### v1.0.0
 
 - 首个版本：进程内拦截 6 个地区/语言查询函数，解除下载/安装/补全/整合包限制。
+
+## 14. 持续集成与发布
+
+两个 GitHub Actions 工作流，都在 `.github/workflows/` 下：
+
+### `ci.yml` —— push / PR 自动构建 + 测试
+
+- 环境 `windows-latest`（自带 .NET Framework 4.8 的 `csc`，不需要安装 SDK）
+- 流程：检查编译环境 → `build.ps1` → `test.ps1`（A–E 五个测试靶）→ 汇总版本/大小/SHA256 → 上传 artifact
+- artifact 名 `PCLRegionBypass-x64`，保留 30 天，可在 Actions 页面直接下载 exe
+- 纯文档改动（`**/*.md`、`docs/`、`LICENSE`、`NOTICE`）不触发，省额度
+
+### `release.yml` —— 打标签自动发版
+
+- 触发：推送 `v*` 标签，或在 Actions 页面手动 Run workflow 并填标签
+- 先校验「标签 == `src/AppInfo.cs` 里的版本号」，不一致直接失败，避免发错包
+- 再构建、跑测试、打包，产出：
+  - `PCLRegionBypass-vX.Y.Z-x64.zip`（exe + README + 免责声明 + LICENSE + NOTICE）
+  - `PCLRegionBypass.exe`（单文件）
+  - `SHA256SUMS.txt`
+- 最后用 `softprops/action-gh-release` 创建 Release 并附上这些文件
+
+### 怎么发一个新版本
+
+```powershell
+# 1. 改版本号（两处要一致）
+#    src/AppInfo.cs        -> Version = "1.1.2"
+#    src/AssemblyInfo.cs   -> AssemblyVersion / AssemblyFileVersion
+# 2. 提交并打标签
+git add -A
+git commit -m "chore: 版本 1.1.2"
+git tag -a v1.1.2 -m "v1.1.2"
+git push origin main --tags
+# 3. 等 Release 工作流跑完，Release 页面就会出现 zip / exe / 校验值
+```
