@@ -119,9 +119,9 @@ PCL 的其它注册表访问（Java 查找、配置等）完全不受影响。
 | 功能 | 说明 |
 |---|---|
 | **托盘菜单** | 显示主界面 / 附加到运行中的 PCL / 开机启动 / 静默启动 / 退出；双击图标打开窗口 |
-| **开机启动** | 写 `HKCU\…\CurrentVersion\Run`（不需要管理员、不建计划任务）；程序被移动后会在下次启动时自动修正路径 |
-| **静默启动** | 启动时不显示窗口、直接进托盘，并弹一个气泡提示；对「开机启动」和手动双击都生效 |
-| **单实例** | 已经在托盘里时再双击 exe，不会开第二个，而是把已有窗口唤出来 |
+| **开机启动** | 写 `HKCU\…\CurrentVersion\Run`（不需要管理员、不建计划任务），命令是 `"…\PCLRegionBypass.exe" --autostart --silent`：登录后**静默进托盘**，不弹窗、不开控制台；程序被移动后会在下次启动时自动修正路径 |
+| **静默启动** | 手动双击 / 命令行启动时不显示窗口、直接进托盘，并弹一个气泡提示；开机启动项不受这个开关影响，永远静默 |
+| **单实例** | 已经在托盘里时再双击 exe，不会开第二个，而是把已有窗口唤出来；开机启动时如果已有实例，不会再抢焦点 |
 
 关闭窗口时默认会问一次：
 
@@ -130,7 +130,11 @@ PCL 的其它注册表访问（Java 查找、配置等）完全不受影响。
 选「最小化到托盘」就只是隐藏窗口（后台继续监视），选「直接退出」则进程结束（已经解锁的启动器不受影响）。
 勾上「记住我的选择」后不再询问，之后可以在托盘菜单或删除 `settings.ini` 里的 `CloseAction` 重新变成询问。
 
-`--silent` 可以在命令行强制静默启动；`--set-autostart on|off` 可以在脚本里开关开机启动。
+`--silent` 可以在命令行强制静默启动；`--set-autostart on|off`、`--set-silent on|off`
+可以在脚本里开关开机启动与静默启动。
+
+> 小提示：开机启动只负责把本工具放进托盘，不会自动拉起 PCL-CE——
+> 你照常双击 PCL，本工具在后台给新进程打补丁；也可以用「附加到运行中」补一次。
 
 ### 命令行
 
@@ -141,9 +145,13 @@ PCLRegionBypass.exe --inspect
 # 静默启动：不显示窗口，直接进托盘
 PCLRegionBypass.exe --silent
 
-# 开关开机启动
+# 开关开机启动（登录后静默进托盘）
 PCLRegionBypass.exe --set-autostart on
 PCLRegionBypass.exe --set-autostart off
+
+# 开关静默启动（手动双击时是否也直接进托盘）
+PCLRegionBypass.exe --set-silent on
+PCLRegionBypass.exe --set-silent off
 
 # 启动并解锁；`--` 之后的参数原样传给 PCL
 PCLRegionBypass.exe --exe "F:\File\PCL2CE\PCL2_CE_Release_x64.exe" -- --launch 1.20.1
@@ -161,7 +169,9 @@ PCLRegionBypass.exe --no-delay --exe ...
 | `--attach <pid>` | 给已运行的进程打补丁 |
 | `--inspect` | 只打印本机信号与判定（含开机启动/静默启动状态），不启动 |
 | `--silent` | 静默启动：不显示窗口，直接进托盘 |
-| `--set-autostart on\|off` | 开关开机启动（写/删 HKCU 的 Run 项） |
+| `--set-autostart on\|off` | 开关开机启动（写/删 HKCU 的 Run 项，命令带 `--autostart --silent`） |
+| `--set-silent on\|off` | 开关静默启动（手动双击时是否直接进托盘） |
+| `--autostart` | 开机启动项传入的标记：GUI + 静默，不弹窗、不开控制台 |
 | `--no-delay` | 语言钩子不等窗口，立刻挂载（副作用：进程区域性变 en-US） |
 | `--registry-hooks` | 强制挂 `DeviceRegion` 注册表钩子（默认只在检测到设备区域=中国大陆时挂） |
 | `--gui` | 强制打开图形界面 |
@@ -185,7 +195,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 ```
 
-五个测试靶（全部在无窗口干扰下运行，测试靶的窗口用 `WS_EX_TOOLWINDOW` + 屏幕外坐标，桌面上看不到）：
+六个测试靶（全部在无窗口干扰下运行，测试靶的窗口用 `WS_EX_TOOLWINDOW` + 屏幕外坐标，桌面上看不到）：
 
 - **A** 判定逻辑
   - A1「确定性单元测试」（`tests/PolicyLogicTest.cs`）：直接喂固定的地区信号给移植版 `Evaluate`，
@@ -196,6 +206,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 - **C** 两阶段模式（先出窗口、再判定）→ `RESTRICTED=NO`，同时 `CurrentCulture=zh-CN` 未被污染
 - **D** 注册表钩子（`tests/RegHookTarget.cs`）→ `DeviceRegion` 被屏蔽，其它值名（含 11 个字符的近似名）照常透传
 - **E** 路径容错（`tests/PathUtilTest.cs`）→ 空串、纯空白、非法字符、不存在的目录都不能抛异常
+- **F** 开机启动与静默启动
+  - F1 真实写 `HKCU\…\Run`：条目指向本 exe，且带 `--autostart --silent`
+  - F2 `--set-silent` 能持久化，`--inspect` 读得到状态
+  - F3 静默设置真的生效：开启后不带参数启动也进托盘、主窗口句柄为 0；关掉后双击正常显示窗口；
+    `--silent` 启动后进程留在托盘；再启动一次是单实例并唤出窗口；
+    `--autostart` 单独传入也必须静默（旧版本会掉进控制台分支直接退出）
+  - F4 关闭开机启动后 Run 项被删除
+  - 结束时把注册表条目与 `settings.ini` 原样恢复，不污染本机设置
 
 实际输出：
 
@@ -228,6 +246,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
 [E] path handling (empty / invalid input must not throw)
   PASS  path helper handles empty and invalid input (exit 0)
   PASS  path helper reports all passed
+
+[F] autostart registry + silent start
+  PASS  set-autostart on exits 0 (exit 0)
+  PASS  Run entry exists and is quoted path to this exe
+  PASS  Run entry passes --autostart
+  PASS  Run entry passes --silent (no console window at logon)
+  PASS  inspect reports autostart on
+  PASS  set-silent on exits 0 (exit 0)
+  PASS  inspect reports silent on
+  PASS  inspect reports silent off
+  PASS  silent setting keeps no-arg launch in tray (exit False)
+  PASS  silent setting hides the window (exit 0)
+  PASS  without silent setting the window shows (exit True)
+  PASS  silent start keeps running in tray (exit False)
+  PASS  silent start shows no window (exit 0)
+  PASS  second launch exits (single instance) (exit True)
+  PASS  second launch brings the window back (exit True)
+  PASS  autostart flag stays in tray (exit False)
+  PASS  autostart flag shows no window (exit 0)
+  PASS  set-autostart off exits 0 (exit 0)
+  PASS  Run entry removed (exit True)
+  PASS  inspect reports autostart off
 
 ALL TESTS PASSED
 ```
@@ -377,6 +417,21 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 - 测试靶显式模拟中文用户进程，使「界面语言不会被带成英文」这条断言在 en-US 的 CI runner 上同样有效
 - `.gitignore` 增加 `dist/`（发布工作流的临时产物）
 
+### v1.2.0
+
+- **修复（重要）**：开机启动此前实际没进托盘。`--autostart` 被当成普通命令行调用，
+  登录时会先弹出一个控制台窗口，找不到启动器后以退出码 1 结束。
+  现在 `--autostart` 明确进入 GUI + 静默模式，启动项写成
+  `"…\PCLRegionBypass.exe" --autostart --silent`，登录后只在托盘里出现（不弹窗、不开控制台）。
+  已被旧版本写下的启动项会在下次启动时自动改写成新命令。
+- 新增 `--set-silent on|off`，脚本里也能开关静默启动。
+- 修复 `--inspect` 不读取 `settings.ini` 的问题：之前「静默启动 / 关闭行为」永远显示默认值。
+- 开机启动时如果已有实例在托盘里，不再把窗口弹到前台打断你（手动双击仍会唤出窗口）。
+- 修复测试 C 的假失败：测试靶窗口设了 `ShowInTaskbar=false`，WinForms 会额外创建一个隐藏的
+  owner 窗口，补丁器按「无主顶层窗口」判断主界面时就漏掉了它。现在只保留 `WS_EX_TOOLWINDOW`。
+- 测试新增 F 组：真实写/删 HKCU 启动项、校验命令行参数、静默启动不显示窗口、单实例唤出窗口，
+  结束后原样恢复注册表条目与 `settings.ini`。
+
 ### v1.1.1
 
 - **修复**：路径框为空时点击「浏览…」抛出 `ArgumentException`（`Path.GetDirectoryName("")`），
@@ -421,12 +476,12 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 
 ```powershell
 # 1. 改版本号（两处要一致）
-#    src/AppInfo.cs        -> Version = "1.1.2"
+#    src/AppInfo.cs        -> Version = "1.2.1"
 #    src/AssemblyInfo.cs   -> AssemblyVersion / AssemblyFileVersion
 # 2. 提交并打标签
 git add -A
-git commit -m "chore: 版本 1.1.2"
-git tag -a v1.1.2 -m "v1.1.2"
+git commit -m "chore: 版本 1.2.1"
+git tag -a v1.2.1 -m "v1.2.1"
 git push origin main --tags
 # 3. 等 Release 工作流跑完，Release 页面就会出现 zip / exe / 校验值
 ```
