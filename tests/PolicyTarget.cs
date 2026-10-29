@@ -44,12 +44,13 @@ namespace PolicyTarget
                 // 模拟启动器：先起一个窗口（此时区域性已经定型），再在窗口存在期间做判定。
                 // 窗口用 WS_EX_TOOLWINDOW + 屏幕外坐标，桌面上完全看不到、也不占任务栏，
                 // 但对 Win32 而言仍是「可见的无主顶层窗口」，补丁器的窗口检测照常成立。
+                // 注意：不能再设 ShowInTaskbar=false —— WinForms 会为此建一个隐藏的 owner 窗口，
+                // 窗口就有了 owner，补丁器按「无主顶层窗口」找主界面时会漏掉它（测试 C 会假失败）。
                 int exitCode = 1;
                 var form = new SilentForm
                 {
                     Text = "PolicyTarget",
-                    ClientSize = new System.Drawing.Size(360, 120),
-                    ShowInTaskbar = false
+                    ClientSize = new System.Drawing.Size(360, 120)
                 };
                 form.Shown += delegate
                 {

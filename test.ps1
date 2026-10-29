@@ -100,6 +100,130 @@ $e = Invoke-Captured $pathTest
 Assert-Equal 'path helper handles empty and invalid input' 0 $e.Code
 Assert-Match 'path helper reports all passed' 'PATHUTIL: ALL PASSED' $e.Text
 
+Write-Host "`n[F] autostart registry + silent start" -ForegroundColor Cyan
+
+# 这一组会写真实的 HKCU 启动项和 settings.ini：先备份，结束时原样恢复。
+$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+$runValueName = 'PCLRegionBypass'
+$settingsPath = [IO.Path]::Combine([Environment]::GetFolderPath('ApplicationData'), 'PCLRegionBypass', 'settings.ini')
+$hadSettings = Test-Path -LiteralPath $settingsPath
+$settingsBackup = if ($hadSettings) { [IO.File]::ReadAllBytes($settingsPath) } else { $null }
+$existingRun = Get-ItemProperty -Path $runKey -Name $runValueName -ErrorAction SilentlyContinue
+$hadRunEntry = $null -ne $existingRun
+$runBackup = if ($hadRunEntry) { $existingRun.$runValueName } else { $null }
+$silentProcess = $null
+$autoProcess = $null
+$settingProcess = $null
+$normalProcess = $null
+
+try {
+    # F1：开关开机启动 → HKCU Run 项指向本程序，并且带 --autostart / --silent
+    $f1 = Invoke-Captured $tool '--set-autostart on'
+    Assert-Equal 'set-autostart on exits 0' 0 $f1.Code
+
+    $registered = (Get-ItemProperty -Path $runKey -Name $runValueName -ErrorAction SilentlyContinue).$runValueName
+    Assert-Match 'Run entry exists and is quoted path to this exe' ('^"' + [regex]::Escape($tool) + '"') "$registered"
+    Assert-Match 'Run entry passes --autostart' '--autostart' "$registered"
+    Assert-Match 'Run entry passes --silent (no console window at logon)' '--silent' "$registered"
+
+    $inspect2 = Invoke-Captured $tool '--inspect'
+    Assert-Match 'inspect reports autostart on' '开机启动\s+=\s+已开启' $inspect2.Text
+
+    # F2：静默启动开关要能持久化，并且 --inspect 读得到
+    $f2 = Invoke-Captured $tool '--set-silent on'
+    Assert-Equal 'set-silent on exits 0' 0 $f2.Code
+    $inspect3 = Invoke-Captured $tool '--inspect'
+    Assert-Match 'inspect reports silent on' '静默启动\s+=\s+已开启' $inspect3.Text
+
+    Invoke-Captured $tool '--set-silent off' | Out-Null
+    $inspect4 = Invoke-Captured $tool '--inspect'
+    Assert-Match 'inspect reports silent off' '静默启动\s+=\s+未开启' $inspect4.Text
+
+    # F3：真正的窗口行为需要交互桌面；无桌面环境（部分 CI）跳过，不算失败
+    $interactive = [Environment]::UserInteractive -and ($null -ne (Get-Process -Name explorer -ErrorAction SilentlyContinue))
+    if (-not $interactive) {
+        Write-Host '  SKIP  GUI window checks (no interactive desktop in this session)' -ForegroundColor Yellow
+    } else {
+        # 静默启动「设置」开启时：双击（不带参数）也直接进托盘
+        Invoke-Captured $tool '--set-silent on' | Out-Null
+        $settingProcess = Start-Process -FilePath $tool -PassThru
+        Start-Sleep -Seconds 2
+        Assert-Equal 'silent setting keeps no-arg launch in tray' $false $settingProcess.HasExited
+        $settingProcess.Refresh()
+        Assert-Equal 'silent setting hides the window' 0 ([int64]$settingProcess.MainWindowHandle)
+        Stop-Process -Id $settingProcess.Id -Force -ErrorAction SilentlyContinue
+        $settingProcess.WaitForExit(5000) | Out-Null
+        $settingProcess = $null
+
+        # 关掉设置后：双击正常显示主界面
+        Invoke-Captured $tool '--set-silent off' | Out-Null
+        $normalProcess = Start-Process -FilePath $tool -PassThru
+        Start-Sleep -Seconds 2
+        $normalProcess.Refresh()
+        Assert-Equal 'without silent setting the window shows' $true ($normalProcess.MainWindowHandle -ne 0)
+        Stop-Process -Id $normalProcess.Id -Force -ErrorAction SilentlyContinue
+        $normalProcess.WaitForExit(5000) | Out-Null
+        $normalProcess = $null
+
+        # --silent：进程留在托盘，但不出现主窗口
+        $silentProcess = Start-Process -FilePath $tool -ArgumentList '--silent' -PassThru
+        Start-Sleep -Seconds 2
+        Assert-Equal 'silent start keeps running in tray' $false $silentProcess.HasExited
+        $silentProcess.Refresh()
+        Assert-Equal 'silent start shows no window' 0 ([int64]$silentProcess.MainWindowHandle)
+
+        # 再双击一次：不产生第二个进程，而是把已有窗口唤出来
+        $second = Start-Process -FilePath $tool -ArgumentList '--silent' -PassThru
+        Start-Sleep -Seconds 2
+        Assert-Equal 'second launch exits (single instance)' $true $second.HasExited
+        $silentProcess.Refresh()
+        Assert-Equal 'second launch brings the window back' $true ($silentProcess.MainWindowHandle -ne 0)
+
+        Stop-Process -Id $silentProcess.Id -Force -ErrorAction SilentlyContinue
+        $silentProcess.WaitForExit(5000) | Out-Null
+        $silentProcess = $null
+
+        # --autostart 单独传入时也必须是「静默 GUI」：旧版本会掉进控制台分支并直接退出 1
+        $autoProcess = Start-Process -FilePath $tool -ArgumentList '--autostart' -PassThru
+        Start-Sleep -Seconds 2
+        Assert-Equal 'autostart flag stays in tray' $false $autoProcess.HasExited
+        $autoProcess.Refresh()
+        Assert-Equal 'autostart flag shows no window' 0 ([int64]$autoProcess.MainWindowHandle)
+
+        Stop-Process -Id $autoProcess.Id -Force -ErrorAction SilentlyContinue
+        $autoProcess.WaitForExit(5000) | Out-Null
+        $autoProcess = $null
+    }
+
+    # F4：关掉开机启动 → 启动项被删除
+    $f4 = Invoke-Captured $tool '--set-autostart off'
+    Assert-Equal 'set-autostart off exits 0' 0 $f4.Code
+    $afterOff = Get-ItemProperty -Path $runKey -Name $runValueName -ErrorAction SilentlyContinue
+    Assert-Equal 'Run entry removed' $true ($null -eq $afterOff)
+
+    $inspect5 = Invoke-Captured $tool '--inspect'
+    Assert-Match 'inspect reports autostart off' '开机启动\s+=\s+未开启' $inspect5.Text
+}
+finally {
+    foreach ($process in @($silentProcess, $autoProcess, $settingProcess, $normalProcess)) {
+        if ($null -ne $process -and -not $process.HasExited) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if ($hadRunEntry) {
+        Set-ItemProperty -Path $runKey -Name $runValueName -Value $runBackup
+    } else {
+        Remove-ItemProperty -Path $runKey -Name $runValueName -ErrorAction SilentlyContinue
+    }
+
+    if ($hadSettings) {
+        [IO.File]::WriteAllBytes($settingsPath, $settingsBackup)
+    } else {
+        Remove-Item -LiteralPath $settingsPath -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host ""
 if ($script:failures -eq 0) {
     Write-Host "ALL TESTS PASSED" -ForegroundColor Green
