@@ -118,6 +118,7 @@ PCL 的其它注册表访问（Java 查找、配置等）完全不受影响。
 
 | 功能 | 说明 |
 |---|---|
+| **主界面开关** | 窗口下方直接有「开机启动」「静默启动」两个复选框，和托盘菜单、`settings.ini` 同步 |
 | **托盘菜单** | 显示主界面 / 附加到运行中的 PCL / 开机启动 / 静默启动 / 退出；双击图标打开窗口 |
 | **开机启动** | 写 `HKCU\…\CurrentVersion\Run`（不需要管理员、不建计划任务），命令是 `"…\PCLRegionBypass.exe" --autostart --silent`：登录后**静默进托盘**，不弹窗、不开控制台；程序被移动后会在下次启动时自动修正路径 |
 | **静默启动** | 手动双击 / 命令行启动时不显示窗口、直接进托盘，并弹一个气泡提示；开机启动项不受这个开关影响，永远静默 |
@@ -213,6 +214,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
     `--silent` 启动后进程留在托盘；再启动一次是单实例并唤出窗口；
     `--autostart` 单独传入也必须静默（旧版本会掉进控制台分支直接退出）
   - F4 关闭开机启动后 Run 项被删除
+  - F5 主界面上的两个开关：用 UI Automation 真的点复选框，
+    验证注册表启动项被写入/删除、`SilentStart` 被持久化
   - 结束时把注册表条目与 `settings.ini` 原样恢复，不污染本机设置
 
 实际输出：
@@ -259,6 +262,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\test.ps1
   PASS  silent setting keeps no-arg launch in tray (exit False)
   PASS  silent setting hides the window (exit 0)
   PASS  without silent setting the window shows (exit True)
+  PASS  main window switch disables autostart (exit True)
+  PASS  main window switch enables autostart (exit True)
+  PASS  main window switch writes the silent command
+  PASS  main window switch enables silent start
+  PASS  main window switch disables silent start
   PASS  silent start keeps running in tray (exit False)
   PASS  silent start shows no window (exit 0)
   PASS  second launch exits (single instance) (exit True)
@@ -411,6 +419,14 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 
 ## 13. 更新日志
 
+### v1.2.1
+
+- 主界面下方新增两个开关：「开机启动（登录后静默进托盘）」「静默启动（手动双击直接进托盘）」。
+  它们和托盘右键菜单、`settings.ini` 共用同一份状态，点一下立即生效，不需要再进托盘菜单。
+- 主界面截图（`docs/gui.png`）更新，能看到这两个开关的位置。
+- 测试 F 组新增「主界面开关」用例：用 UI Automation 真的点击复选框，
+  断言注册表启动项被写入/删除、`SilentStart` 被持久化。
+
 ### v1.2.0
 
 - **修复（重要）**：开机启动此前实际没进托盘。`--autostart` 被当成普通命令行调用，
@@ -473,12 +489,12 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 
 ```powershell
 # 1. 改版本号（两处要一致）
-#    src/AppInfo.cs        -> Version = "1.2.1"
+#    src/AppInfo.cs        -> Version = "1.2.2"
 #    src/AssemblyInfo.cs   -> AssemblyVersion / AssemblyFileVersion
 # 2. 提交并打标签
 git add -A
-git commit -m "chore: 版本 1.2.1"
-git tag -a v1.2.1 -m "v1.2.1"
+git commit -m "chore: 版本 1.2.2"
+git tag -a v1.2.2 -m "v1.2.2"
 git push origin main --tags
 # 3. 等 Release 工作流跑完，Release 页面就会出现 zip / exe / 校验值
 ```

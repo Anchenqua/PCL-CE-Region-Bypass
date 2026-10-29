@@ -15,6 +15,8 @@ namespace PclRegionBypass
         private readonly Button _attachButton;
         private readonly Button _inspectButton;
         private readonly CheckBox _watchBox;
+        private readonly CheckBox _autoStartBox;
+        private readonly CheckBox _silentBox;
         private readonly RichTextBox _logBox;
         private readonly Label _statusLabel;
         private readonly System.Windows.Forms.Timer _pollTimer = new System.Windows.Forms.Timer();
@@ -31,6 +33,7 @@ namespace PclRegionBypass
 
         private bool _shownOnce;
         private bool _exiting;
+        private bool _updatingSwitches;
         private volatile bool _showRequested;
         private string _pendingBalloon;
 
@@ -107,10 +110,27 @@ namespace PclRegionBypass
                 Checked = true
             };
 
+            // 主界面上的两个开关，和托盘菜单里的是同一份状态。
+            // 用 CheckedChanged 而不是 Click：WinForms 的 Click 可能先于 Checked 更新触发，
+            // 那样处理函数读到的是切换前的值，开关会「点一下没反应、点两下才生效」。
+            _autoStartBox = new CheckBox
+            {
+                Text = "开机启动（登录后静默进托盘）",
+                Location = new Point(14, 98),
+                AutoSize = true
+            };
+
+            _silentBox = new CheckBox
+            {
+                Text = "静默启动（手动双击直接进托盘）",
+                Location = new Point(320, 98),
+                AutoSize = true
+            };
+
             _logBox = new RichTextBox
             {
-                Location = new Point(14, 98),
-                Size = new Size(732, 396),
+                Location = new Point(14, 132),
+                Size = new Size(732, 362),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
                 ReadOnly = true,
                 BackColor = Color.FromArgb(28, 28, 30),
@@ -135,6 +155,8 @@ namespace PclRegionBypass
             Controls.Add(_attachButton);
             Controls.Add(_inspectButton);
             Controls.Add(_watchBox);
+            Controls.Add(_autoStartBox);
+            Controls.Add(_silentBox);
             Controls.Add(_logBox);
             Controls.Add(_statusLabel);
 
@@ -188,6 +210,20 @@ namespace PclRegionBypass
 
             _autoStartItem.Checked = AutoStart.IsEnabled();
             _silentItem.Checked = Settings.SilentStart;
+            _autoStartBox.Checked = _autoStartItem.Checked;
+            _silentBox.Checked = _silentItem.Checked;
+
+            // 初始状态同步完再挂事件，避免启动时把「同步」当成用户点击
+            _autoStartBox.CheckedChanged += delegate
+            {
+                if (_updatingSwitches) return;
+                ToggleAutoStart(_autoStartBox.Checked);
+            };
+            _silentBox.CheckedChanged += delegate
+            {
+                if (_updatingSwitches) return;
+                ToggleSilent(_silentBox.Checked);
+            };
 
             string detected = initialPath;
             if (string.IsNullOrEmpty(detected)) detected = Settings.LastLauncherPath;
@@ -198,6 +234,7 @@ namespace PclRegionBypass
             AppendLog("如果启动器已经在运行，点「附加到运行中」即可，不必重启它。");
             AppendLog("关闭本窗口默认会询问「最小化到托盘 / 直接退出」，托盘菜单里可改开机启动与静默启动。");
             AppendLog("开机启动会让本工具在登录后静默进入托盘；静默启动决定手动双击时是否也直接进托盘。");
+            AppendLog("这两个开关在主界面下方和托盘右键菜单里都能改，两边状态同步。");
             if (string.IsNullOrEmpty(detected)) AppendLog("没有自动找到启动器，请手动浏览选择。");
 
             if (_startHidden) _pendingBalloon = "静默启动完成，已在托盘运行。双击托盘图标可打开窗口。";
@@ -306,16 +343,31 @@ namespace PclRegionBypass
             try
             {
                 AutoStart.SetEnabled(enabled);
-                _autoStartItem.Checked = AutoStart.IsEnabled();
+                SyncAutoStartUi();
                 AppendLog(enabled
                     ? "已开启开机启动（登录后静默进托盘）：" + AutoStart.CurrentCommand()
                     : "已关闭开机启动。");
             }
             catch (Exception ex)
             {
-                _autoStartItem.Checked = AutoStart.IsEnabled();
+                SyncAutoStartUi();
                 AppendLog("设置开机启动失败：" + ex.Message);
                 if (!Visible) ShowBalloon("设置开机启动失败", ex.Message, ToolTipIcon.Warning);
+            }
+        }
+
+        /// <summary>把托盘菜单与主界面开关同步到注册表的真实状态，不触发用户的切换逻辑。</summary>
+        private void SyncAutoStartUi()
+        {
+            _updatingSwitches = true;
+            try
+            {
+                _autoStartItem.Checked = AutoStart.IsEnabled();
+                _autoStartBox.Checked = _autoStartItem.Checked;
+            }
+            finally
+            {
+                _updatingSwitches = false;
             }
         }
 
@@ -323,6 +375,18 @@ namespace PclRegionBypass
         {
             Settings.SilentStart = enabled;
             Settings.Save();
+
+            _updatingSwitches = true;
+            try
+            {
+                _silentItem.Checked = enabled;
+                _silentBox.Checked = enabled;
+            }
+            finally
+            {
+                _updatingSwitches = false;
+            }
+
             AppendLog(enabled ? "已开启静默启动：下次启动不显示窗口，直接进托盘。" : "已关闭静默启动。");
         }
 

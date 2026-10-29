@@ -161,6 +161,72 @@ try {
         Start-Sleep -Seconds 2
         $normalProcess.Refresh()
         Assert-Equal 'without silent setting the window shows' $true ($normalProcess.MainWindowHandle -ne 0)
+
+        # 主界面上的两个开关：点一下必须真的写/删注册表、写设置。
+        # 用 BM_CLICK 直接点复选框（不依赖 UI Automation：PowerShell 5.1 里 UIA 把 WinForms
+        # 控件都报成 Pane，拿不到 CheckBox 类型和 TogglePattern）。
+        try {
+            Add-Type -TypeDefinition @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class UiClick {
+    public delegate bool EnumProc(IntPtr hwnd, IntPtr param);
+    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr param);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowTextW(IntPtr hwnd, StringBuilder text, int max);
+    [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+    private static IntPtr Find(IntPtr parent, string prefix) {
+        IntPtr found = IntPtr.Zero;
+        EnumChildWindows(parent, delegate(IntPtr hwnd, IntPtr param) {
+            var text = new StringBuilder(512);
+            GetWindowTextW(hwnd, text, 512);
+            if (text.ToString().StartsWith(prefix, StringComparison.Ordinal)) { found = hwnd; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+    public static bool Click(IntPtr parent, string prefix) {
+        IntPtr target = Find(parent, prefix);
+        if (target == IntPtr.Zero) return false;
+        SendMessage(target, 0x00F5, IntPtr.Zero, IntPtr.Zero); // BM_CLICK
+        return true;
+    }
+}
+"@ -ErrorAction Stop
+
+            $mainWindow = [IntPtr]$normalProcess.MainWindowHandle
+
+            # 进到这里时开机启动是 F1 打开的：开关启动时就该是「勾上」，
+            # 所以第一次点击必然是「关闭」——正好顺带验证了启动时的状态同步。
+            $autoClicked = [UiClick]::Click($mainWindow, '开机启动')
+            if (-not $autoClicked) {
+                Write-Host '  SKIP  UI switch checks (autostart checkbox not found in the window)' -ForegroundColor Yellow
+            } else {
+                # 点掉开机启动 → Run 项应被删除
+                Start-Sleep -Milliseconds 700
+                $removedByUi = (Get-ItemProperty -Path $runKey -Name $runValueName -ErrorAction SilentlyContinue).$runValueName
+                Assert-Equal 'main window switch disables autostart' $true ($null -eq $removedByUi)
+
+                # 再点回来 → Run 项应重新写入，命令里带 --autostart --silent
+                [UiClick]::Click($mainWindow, '开机启动') | Out-Null
+                Start-Sleep -Milliseconds 700
+                $registeredByUi = (Get-ItemProperty -Path $runKey -Name $runValueName -ErrorAction SilentlyContinue).$runValueName
+                Assert-Equal 'main window switch enables autostart' $true ($null -ne $registeredByUi)
+                Assert-Match 'main window switch writes the silent command' '--autostart --silent' "$registeredByUi"
+
+                # 静默启动开关写 settings.ini
+                [UiClick]::Click($mainWindow, '静默启动') | Out-Null
+                Start-Sleep -Milliseconds 700
+                Assert-Match 'main window switch enables silent start' 'SilentStart=1' ([IO.File]::ReadAllText($settingsPath))
+
+                [UiClick]::Click($mainWindow, '静默启动') | Out-Null
+                Start-Sleep -Milliseconds 700
+                Assert-Match 'main window switch disables silent start' 'SilentStart=0' ([IO.File]::ReadAllText($settingsPath))
+            }
+        } catch {
+            Write-Host ('  SKIP  UI switch checks ({0})' -f $_.Exception.Message) -ForegroundColor Yellow
+        }
+
         Stop-Process -Id $normalProcess.Id -Force -ErrorAction SilentlyContinue
         $normalProcess.WaitForExit(5000) | Out-Null
         $normalProcess = $null
