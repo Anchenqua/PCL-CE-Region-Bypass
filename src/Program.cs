@@ -32,6 +32,12 @@ namespace PclRegionBypass
                 return SetAutoStart(options.SetAutoStart.Value);
             }
 
+            if (options.SetSilent.HasValue)
+            {
+                OpenConsole();
+                return SetSilentStart(options.SetSilent.Value);
+            }
+
             if (options.Gui || args.Length == 0)
             {
                 return RunGui(options);
@@ -96,8 +102,9 @@ namespace PclRegionBypass
             {
                 if (!createdNew)
                 {
-                    // 已经在托盘里跑着了：把已有窗口叫出来，本次直接退出
-                    SignalExistingInstance();
+                    // 已经在托盘里跑着了：把已有窗口叫出来，本次直接退出。
+                    // 开机启动时如果已经有实例（例如刚手动开过），就不要再抢焦点。
+                    SignalExistingInstance(!options.Autostart);
                     return 0;
                 }
 
@@ -126,7 +133,8 @@ namespace PclRegionBypass
                 };
 
                 Settings.Load();
-                bool startHidden = options.Silent || Settings.SilentStart;
+                // --autostart 是登录时由注册表启动项传入的：一律静默进托盘，不能弹窗、更不能开控制台。
+                bool startHidden = options.Silent || options.Autostart || Settings.SilentStart;
 
                 try
                 {
@@ -173,8 +181,9 @@ namespace PclRegionBypass
             }
         }
 
-        private static void SignalExistingInstance()
+        private static void SignalExistingInstance(bool showWindow)
         {
+            if (!showWindow) return;
             try
             {
                 using (EventWaitHandle existing = EventWaitHandle.OpenExisting(ShowEventName))
@@ -193,7 +202,7 @@ namespace PclRegionBypass
                 AutoStart.SetEnabled(enabled);
                 bool state = AutoStart.IsEnabled();
                 Console.WriteLine("开机启动：" + (state ? "已开启" : "已关闭"));
-                if (state) Console.WriteLine("启动项：" + AutoStart.CurrentCommand());
+                if (state) Console.WriteLine("启动项：" + AutoStart.CurrentCommand() + "（登录后静默进入托盘）");
                 return state == enabled ? 0 : 1;
             }
             catch (Exception ex)
@@ -203,10 +212,29 @@ namespace PclRegionBypass
             }
         }
 
+        private static int SetSilentStart(bool enabled)
+        {
+            try
+            {
+                Settings.Load();
+                Settings.SilentStart = enabled;
+                Settings.Save();
+                Console.WriteLine("静默启动：" + (Settings.SilentStart ? "已开启" : "已关闭") +
+                                  "（手动双击时" + (Settings.SilentStart ? "直接进托盘" : "显示主界面") + "）");
+                return Settings.SilentStart == enabled ? 0 : 1;
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("设置静默启动失败：" + ex.Message);
+                return 1;
+            }
+        }
+
         // ---------- 诊断 ----------
 
         private static int Inspect()
         {
+            Settings.Load(); // 不加载的话「静默启动 / 关闭行为」永远显示默认值
             RegionSignals signals = RegionPolicyPort.ReadWindowsSignals();
             RegionAssessment assessment = RegionPolicyPort.Evaluate(signals);
 
@@ -263,13 +291,14 @@ namespace PclRegionBypass
             Console.WriteLine("  PCLRegionBypass.exe --inspect          查看本机地区信号、判定与启动项状态");
             Console.WriteLine("  PCLRegionBypass.exe --exe <path>       启动指定启动器并解除限制（命令行模式）");
             Console.WriteLine("  PCLRegionBypass.exe --attach <pid>     给正在运行的启动器打补丁");
-            Console.WriteLine("  PCLRegionBypass.exe --set-autostart on|off   开关开机启动");
+            Console.WriteLine("  PCLRegionBypass.exe --set-autostart on|off   开关开机启动（登录后静默进托盘）");
+            Console.WriteLine("  PCLRegionBypass.exe --set-silent on|off      开关静默启动（手动双击时是否进托盘）");
             Console.WriteLine();
             Console.WriteLine("选项：");
             Console.WriteLine("  --no-delay    立刻挂上全部钩子（会连带影响进程的区域性，仅调试用）");
             Console.WriteLine("  --registry-hooks  强制挂载 DeviceRegion 注册表钩子（默认仅在检测到设备区域=中国大陆时挂）");
             Console.WriteLine("  --gui         强制打开图形界面");
-            Console.WriteLine("  --autostart   开机启动时由启动项传入，标记用");
+            Console.WriteLine("  --autostart   开机启动时由启动项传入：静默进托盘，不弹窗、不开控制台");
             Console.WriteLine("  -- <args>     其后的参数原样传给启动器");
             Console.WriteLine();
             Console.WriteLine("原理：在启动器进程内把 6 个地区/语言相关的 Win32 查询函数改写为返回美国值，");
@@ -320,11 +349,13 @@ namespace PclRegionBypass
         public bool ShowHelp;
         public bool NoDelay;
         public bool Silent;
+        public bool Autostart;
         public bool ForceRegistryHooks;
         public int AttachProcessId;
         public string ExecutablePath;
         public string PassthroughArguments = string.Empty;
         public bool? SetAutoStart;
+        public bool? SetSilent;
 
         public static Options Parse(string[] args)
         {
@@ -355,7 +386,11 @@ namespace PclRegionBypass
                         options.Gui = true; // 静默启动本身就是 GUI 模式，只是不显示窗口
                         break;
                     case "--autostart":
-                        break; // 启动项传入的标记，行为由「静默启动」设置决定
+                        // 注册表启动项传入的标记：一定是 GUI 模式，而且静默进托盘，
+                        // 否则登录时会弹出一个控制台窗口（旧版本就是这么坏的）。
+                        options.Autostart = true;
+                        options.Gui = true;
+                        break;
                     case "--inspect":
                         options.Inspect = true;
                         break;
@@ -382,6 +417,14 @@ namespace PclRegionBypass
                         {
                             string value = args[++i].ToLowerInvariant();
                             options.SetAutoStart = value == "on" || value == "1" || value == "true";
+                        }
+
+                        break;
+                    case "--set-silent":
+                        if (i + 1 < args.Length)
+                        {
+                            string value = args[++i].ToLowerInvariant();
+                            options.SetSilent = value == "on" || value == "1" || value == "true";
                         }
 
                         break;

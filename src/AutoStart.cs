@@ -19,9 +19,14 @@ namespace PclRegionBypass
             get { return Assembly.GetExecutingAssembly().Location; }
         }
 
+        /// <summary>
+        ///     启动项命令行：登录时静默进托盘。
+        ///     同时写 --autostart（含义标记）与 --silent（显式静默），
+        ///     这样即使这一行被旧版本程序读到时也不会弹出控制台窗口。
+        /// </summary>
         private static string BuildCommand(string exePath)
         {
-            return "\"" + exePath + "\" --autostart";
+            return "\"" + exePath + "\" --autostart --silent";
         }
 
         public static string CurrentCommand()

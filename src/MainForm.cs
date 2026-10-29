@@ -154,7 +154,7 @@ namespace PclRegionBypass
             var attachItem = new ToolStripMenuItem("附加到运行中的 PCL");
             attachItem.Click += delegate { AttachToRunning(false); };
 
-            _autoStartItem = new ToolStripMenuItem("开机启动");
+            _autoStartItem = new ToolStripMenuItem("开机启动（登录后静默进托盘）");
             _autoStartItem.CheckOnClick = true;
             _autoStartItem.Click += delegate { ToggleAutoStart(_autoStartItem.Checked); };
 
@@ -197,6 +197,7 @@ namespace PclRegionBypass
             AppendLog("提示：选择 PCL2_CE_Release_x64.exe 或 PCL.exe，然后点「启动并解除限制」。");
             AppendLog("如果启动器已经在运行，点「附加到运行中」即可，不必重启它。");
             AppendLog("关闭本窗口默认会询问「最小化到托盘 / 直接退出」，托盘菜单里可改开机启动与静默启动。");
+            AppendLog("开机启动会让本工具在登录后静默进入托盘；静默启动决定手动双击时是否也直接进托盘。");
             if (string.IsNullOrEmpty(detected)) AppendLog("没有自动找到启动器，请手动浏览选择。");
 
             if (_startHidden) _pendingBalloon = "静默启动完成，已在托盘运行。双击托盘图标可打开窗口。";
@@ -307,7 +308,7 @@ namespace PclRegionBypass
                 AutoStart.SetEnabled(enabled);
                 _autoStartItem.Checked = AutoStart.IsEnabled();
                 AppendLog(enabled
-                    ? "已开启开机启动：" + AutoStart.CurrentCommand()
+                    ? "已开启开机启动（登录后静默进托盘）：" + AutoStart.CurrentCommand()
                     : "已关闭开机启动。");
             }
             catch (Exception ex)
