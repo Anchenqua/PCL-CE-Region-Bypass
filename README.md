@@ -411,12 +411,6 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 
 ## 13. 更新日志
 
-### 未发布（main）
-
-- 新增 GitHub Actions：`ci.yml`（构建 + 全量测试 + artifact）与 `release.yml`（标签校验 + 打包 + 自动发版）
-- 测试靶显式模拟中文用户进程，使「界面语言不会被带成英文」这条断言在 en-US 的 CI runner 上同样有效
-- `.gitignore` 增加 `dist/`（发布工作流的临时产物）
-
 ### v1.2.0
 
 - **修复（重要）**：开机启动此前实际没进托盘。`--autostart` 被当成普通命令行调用，
@@ -429,8 +423,11 @@ git rebase -r --root --exec "git commit --amend --no-edit --reset-author"
 - 开机启动时如果已有实例在托盘里，不再把窗口弹到前台打断你（手动双击仍会唤出窗口）。
 - 修复测试 C 的假失败：测试靶窗口设了 `ShowInTaskbar=false`，WinForms 会额外创建一个隐藏的
   owner 窗口，补丁器按「无主顶层窗口」判断主界面时就漏掉了它。现在只保留 `WS_EX_TOOLWINDOW`。
-- 测试新增 F 组：真实写/删 HKCU 启动项、校验命令行参数、静默启动不显示窗口、单实例唤出窗口，
-  结束后原样恢复注册表条目与 `settings.ini`。
+- 测试新增 F 组：真实写/删 HKCU 启动项、校验命令行参数、静默设置与 `--silent`/`--autostart`
+  的窗口行为、单实例唤出窗口，结束后原样恢复注册表条目与 `settings.ini`。
+- 新增 GitHub Actions：`ci.yml`（构建 + 全量测试 + artifact）与 `release.yml`（标签校验 + 打包 + 自动发版）。
+- 测试靶显式模拟中文用户进程，使「界面语言不会被带成英文」这条断言在 en-US 的 CI runner 上同样有效。
+- `.gitignore` 增加 `dist/`（发布工作流的临时产物）。
 
 ### v1.1.1
 
